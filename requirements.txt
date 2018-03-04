@@ -1,0 +1,5 @@
+numpy==1.13.3
+torch==0.3.0.post4
+torchvision==0.2.0
+tqdm==4.19.4
+visdom==0.1.6.5

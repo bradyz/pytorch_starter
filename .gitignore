@@ -1,0 +1,10 @@
+*.sw*
+
+data/*
+!data/.gitkeep
+
+weights/*
+!weights/.gitkeep
+
+__pycache__/
+*.pyc
