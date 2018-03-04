@@ -47,3 +47,7 @@ class Parameters(object):
 
     def state_dict(self):
         return self.__dict__
+
+    def load_state_dict(self, state):
+        for key, val in state.items():
+            self.__dict__[key] = val
