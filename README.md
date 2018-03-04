@@ -35,5 +35,5 @@ python3 train.py --checkpoint_path weights/model.t7 --data_dir data/ --batch_siz
 
 ### Screenshots
 
-<img src="assets/progress.png" width="25%">
-<img src="assets/graphs.png" width="25%">
+<img src="assets/progress.png" width="75%">
+<img src="assets/graphs.png" width="75%">
