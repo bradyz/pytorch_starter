@@ -1,66 +1,68 @@
-import tqdm
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.optim as optim
-
-from torch.autograd import Variable
+import tqdm
 
 from dataset import CIFAR10
 from logger import Logger
 from model import BasicNetwork
-from utils import maybe_load, save
-from parameters import Parameters
+from utils import maybe_load, save, make_variable, modify_learning_rate
+from parameters import DefaultParameters
 
 
-def train_or_test(net, opt, crit, log, data, params, is_train, is_first):
+def train_or_test(net, opt, crit, log, data, params, is_first):
+    is_train = opt is not None
+
     if is_train:
         net.train()
     else:
         net.eval()
 
-    # Metrics.
     losses = list()
-
     correct = 0
     total_samples = 0
 
-    for inputs, targets in tqdm.tqdm(data, total=len(data), desc='Batch'):
-        if params.use_cuda:
-            inputs, targets = inputs.cuda(), targets.cuda()
+    for inputs, targets in tqdm.tqdm(
+            data, total=len(data), desc='Batch', disable=not params.use_tqdm):
 
-        inputs, targets = Variable(inputs), Variable(targets)
-
-        if is_train:
-            opt.zero_grad()
+        inputs = make_variable(inputs, params.use_cuda)
+        targets = make_variable(targets, params.use_cuda)
 
         logits = net(inputs)
         loss = crit(logits, targets)
 
         if is_train and not is_first:
+            opt.zero_grad()
             loss.backward()
-
             opt.step()
 
-        losses.append(loss.cpu().data[0])
-
         _, predicted = torch.max(logits.data, 1)
-        correct += predicted.eq(targets.data).cpu().sum()
 
+        correct += predicted.eq(targets.data).cpu().sum()
         total_samples += targets.size(0)
+
+        losses.append(loss.cpu().data[0])
 
     loss = np.mean(losses)
     accuracy = correct / total_samples
 
-    log.update(loss, accuracy, is_train)
+    if is_train:
+        log.update(loss_train=loss, accuracy_train=accuracy)
+    else:
+        log.update(loss_test=loss, accuracy_test=accuracy)
 
 
 def main(params):
-    net = BasicNetwork(CIFAR10.in_channels, CIFAR10.num_classes)
-    log = Logger()
-    opt = optim.Adam(
+    if params.dataset_name == 'CIFAR10':
+        data_params = CIFAR10
+
+    net = BasicNetwork(data_params.in_channels, data_params.num_classes)
+    crit = nn.CrossEntropyLoss()
+    log = Logger(params.use_visdom)
+    opt = torch.optim.Adam(
             net.parameters(), lr=params.lr, weight_decay=params.weight_decay)
 
+    # All the things to be saved and loaded.
     state = {'net': net,
             'log': log,
             'opt': opt,
@@ -68,27 +70,27 @@ def main(params):
 
     maybe_load(state, params.checkpoint_path)
 
-    print(params)
-
-    log.visible = params.use_vizdom
-
-    crit = nn.CrossEntropyLoss()
-
     if params.use_cuda:
         net.cuda()
 
-    data_train = CIFAR10.get_data(params.data_dir, True, params.batch_size)
-    data_test = CIFAR10.get_data(params.data_dir, False, params.batch_size)
+    data_train = data_params.get_data(params.data_dir, True, params.batch_size)
+    data_test = data_params.get_data(params.data_dir, False, params.batch_size)
 
-    for epoch in tqdm.trange(log.epoch, params.max_epoch, desc='Epoch'):
-        is_first = epoch == 0
+    print(params)
 
-        train_or_test(
+    log.draw()
 
-                net, opt, crit, log, data_train, params, True, is_first)
+    for epoch in tqdm.trange(
+            log.epoch, params.max_epoch,
+            desc='Epoch', disable=not params.use_tqdm):
 
-        train_or_test(
-                net, opt, crit, log, data_test, params, False, is_first)
+        if not params.use_tqdm:
+            print('Epoch: %d' % epoch)
+
+        modify_learning_rate(epoch, opt, params)
+
+        train_or_test(net, opt, crit, log, data_train, params, epoch == 0)
+        train_or_test(net, None, crit, log, data_test, params, epoch == 0)
 
         log.set_epoch(epoch+1)
 
@@ -97,7 +99,7 @@ def main(params):
 
 
 if __name__ == '__main__':
-    params = Parameters()
+    params = DefaultParameters()
     params.parse()
 
     main(params)

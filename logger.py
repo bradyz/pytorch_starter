@@ -2,93 +2,72 @@ import visdom
 import numpy as np
 
 
-from dataset import CIFAR10
-
-
 class Logger(object):
-    def __init__(self):
+    def __init__(self, use_visdom):
+        self.vis = visdom.Visdom() if use_visdom else None
+        self.use_visdom = use_visdom
+
         self.epoch = 0
 
-        self.viz = visdom.Visdom()
+        self.metrics = {
+                'loss_train', 'loss_test', 'accuracy_train', 'accuracy_test'}
+        self.plots = {
+                name: ScalarPlot(self.vis, name, use_visdom)
+                for name in self.metrics}
 
-        self.loss_train = ScalarPlot(self.viz, 'loss_train')
-        self.loss_test = ScalarPlot(self.viz, 'loss_test')
+    def update(self, **kwargs):
+        for key, val in kwargs.items():
+            self.plots[key].draw(val)
 
-        self.accuracy_train = ScalarPlot(self.viz, 'accuracy_train')
-        self.accuracy_test = ScalarPlot(self.viz, 'accuracy_test')
-
-        self.use_vizdom = True
-
-    def update(self, loss, accuracy, is_train):
-        if is_train:
-            self.loss_train.draw(loss, self.use_vizdom)
-            self.accuracy_train.draw(accuracy, self.use_vizdom)
-        else:
-            self.loss_test.draw(loss, self.use_vizdom)
-            self.accuracy_test.draw(accuracy, self.use_vizdom)
-
-    def draw(self, is_train):
-        if not self.use_vizdom:
+    def draw(self):
+        if not self.use_visdom:
             return
 
-        self.loss_train.draw()
-        self.accuracy_train.draw()
-
-        self.loss_test.draw()
-        self.accuracy_test.draw()
+        for _, val in self.plots.items():
+            val.draw()
 
     def set_epoch(self, epoch):
         self.epoch = epoch
 
     def should_save(self):
         return True
-        # return min(self.test_loss) == self.test_loss[-1]
 
     def load_state_dict(self, state):
         self.epoch = state['epoch']
 
-        self.loss_train.values = state['loss_train']
-        self.accuracy_train.values = state['accuracy_train']
-
-        self.loss_test.values = state['loss_test']
-        self.accuracy_test.values = state['accuracy_test']
+        for name, plot in self.plots.items():
+            plot.values = state[name]
 
     def state_dict(self):
         state = dict()
 
         state['epoch'] = self.epoch
 
-        state['loss_train'] = self.loss_train.values
-        state['accuracy_train'] = self.accuracy_train.values
-
-        state['loss_test'] = self.loss_test.values
-        state['accuracy_test'] = self.accuracy_test.values
+        for name, plot in self.plots.items():
+            state[name] = plot.values
 
         return state
 
 
 class ScalarPlot(object):
-    def __init__(self, viz, title):
-        self.viz = viz
-        self.title = title
+    def __init__(self, vis, title, use_visdom):
+        self.vis = vis
+        self.use_visdom = use_visdom
 
+        self.title = title
         self.values = list()
 
-    def draw(self, y=None, should_render=False):
-        if y:
+    def draw(self, y=None):
+        if y is not None:
             self.values.append(y)
 
         if not self.values:
             return
-        elif not should_render:
+        elif not self.use_visdom:
             return
 
-        self.viz.line(
+        self.vis.line(
                 X=np.float32(list(range(len(self.values)))),
                 Y=np.float32(self.values),
-                name=self.title,
                 win=self.title,
                 opts=dict(title=self.title))
-
-    def __getitem__(self, idx):
-        return self.values[idx]

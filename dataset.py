@@ -4,30 +4,30 @@ import torchvision
 import torchvision.transforms as transforms
 
 
-class DataLoaderWrapper(DataLoader):
-    def __init__(self, dataset, is_train, batch_size, num_workers=2):
-        super().__init__(
-                dataset,
-                batch_size=batch_size, shuffle=is_train, num_workers=num_workers)
+def make_transformation(dataset_params, normalize, is_train):
+    functions = list()
+
+    if is_train:
+        functions.append(transforms.RandomHorizontalFlip())
+
+    functions.append(transforms.ToTensor())
+
+    if normalize:
+        functions.append(
+                transforms.Normalize(dataset_params.mean, dataset_params.std))
+
+    return transforms.Compose(functions)
 
 
-class BasicDataLoader(DataLoaderWrapper):
-    def __init__(self, params, is_train, batch_size, data_root, normalize):
-        augments = list()
+def _dataloader_wrapper(
+        dataset_params, normalize, is_train, batch_size, data_root, threads):
+    augment = make_transformation(dataset_params, normalize, is_train)
+    data = dataset_params.dataset(
+            root=data_root, train=is_train, download=True, transform=augment)
 
-        if is_train:
-            augments.append(transforms.RandomHorizontalFlip())
-
-        augments.append(transforms.ToTensor())
-
-        if normalize:
-            augments.append(transforms.Normalize(params.mean, params.std))
-
-        data = params.dataset(
-                root=data_root, train=is_train, download=True,
-                transform=transforms.Compose(augments))
-
-        super().__init__(data, is_train, batch_size)
+    return DataLoader(
+            data, batch_size=batch_size, shuffle=is_train,
+            num_workers=threads)
 
 
 class CIFAR10(object):
@@ -39,5 +39,6 @@ class CIFAR10(object):
     size = 32
     num_classes = 10
 
-    def get_data(data_root, is_train, batch_size, normalize=True):
-        return BasicDataLoader(CIFAR10, is_train, batch_size, data_root, normalize)
+    def get_data(data_root, is_train, batch_size, normalize=True, threads=2):
+        return _dataloader_wrapper(
+                CIFAR10, normalize, is_train, batch_size, data_root, threads)
